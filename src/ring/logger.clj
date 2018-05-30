@@ -2,7 +2,8 @@
   "Ring middleware to log each request, response, and parameters."
   (:require
    [clojure.tools.logging :as c.t.logging]
-   [ring.logger.redaction :as redaction]))
+   [ring.logger.redaction :as redaction]
+   [manifold.deferred :as d))
 
 (defn default-log-fn [{:keys [level throwable message]}]
   (c.t.logging/log level throwable message))
@@ -89,13 +90,13 @@
            handler)))))
 
 (defn wrap-log-response
-  "Ring middleware to log response and timing for each request.
+  "Forked from https://github.com/nberger/ring-logger/blob/master/src/ring/logger.clj#L91
+  Uses manifold.deferred/chain to handle deferred responses
 
+  Ring middleware to log response and timing for each request.
   Takes the starting timestamp (in msec.) from the :ring.logger/start-ms key in
   the request map, or System/currentTimeMillis if that key is not present.
-
   Options may include:
-
     * log-fn: used to do the actual logging. Accepts a map with keys
               [level throwable message]. Defaults to `clojure.tools.logging/log`.
     * transform-fn: transforms a log item before it is passed through to log-fn. Messsage types
@@ -108,37 +109,37 @@
               the original exception. Defaults to true"
   ([handler] (wrap-log-response handler {}))
   ([handler {:keys [log-fn log-exceptions? transform-fn request-keys]
-             :or {log-fn default-log-fn
+             :or {log-fn rl/default-log-fn
                   transform-fn identity
                   log-exceptions? true
-                  request-keys default-request-keys}}]
+                  request-keys rl/default-request-keys}}]
    (fn [request]
-     (let [start-ms (or (::start-ms request)
+     (let [start-ms (or (::rl/start-ms request)
                         (System/currentTimeMillis))
-           log (make-transform-and-log-fn transform-fn log-fn)
+           log (rl/make-transform-and-log-fn transform-fn log-fn)
            base-message (select-keys request request-keys)]
-       (try
-         (let [{:keys [status] :as response} (handler request)
-               elapsed-ms (- (System/currentTimeMillis) start-ms)
-               level (if (and (number? status)
-                              (<= 500 status))
-                       :error
-                       :info)]
-           (log {:level level
-                 :message (-> base-message
-                              (assoc ::type :finish
-                                     :status status
-                                     ::ms elapsed-ms))})
-           response)
-         (catch Exception e
-           (when log-exceptions?
-             (let [elapsed-ms (- (System/currentTimeMillis) start-ms)]
-               (log {:level :error
-                     :throwable e
-                     :message (-> base-message
-                                  (assoc ::type :exception
-                                         ::ms elapsed-ms))})))
-           (throw e)))))))
+       (-> (handler request)
+           (d/chain (fn [{:keys [status] :as response}]
+                      (let [elapsed-ms (- (System/currentTimeMillis) start-ms)
+                            level (if (and (number? status)
+                                           (<= 500 status))
+                                    :error
+                                    :info)]
+                        (log {:level level
+                              :message (-> base-message
+                                           (assoc ::rl/type :finish
+                                                  :status status
+                                                  ::rl/ms elapsed-ms))})
+                        response)))
+           (d/catch (fn [e]
+                      (when log-exceptions?
+                        (let [elapsed-ms (- (System/currentTimeMillis) start-ms)]
+                          (log {:level :error
+                                :throwable e
+                                :message (-> base-message
+                                             (assoc ::rl/type :exception
+                                                    ::ms elapsed-ms))})))
+                      (throw e))))))))
 
 (defn wrap-with-logger
   "Returns a ring middleware handler to log arrival, response, and parameters
