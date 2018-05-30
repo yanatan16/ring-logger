@@ -3,7 +3,7 @@
   (:require
    [clojure.tools.logging :as c.t.logging]
    [ring.logger.redaction :as redaction]
-   [manifold.deferred :as d))
+   [manifold.deferred :as d]))
 
 (defn default-log-fn [{:keys [level throwable message]}]
   (c.t.logging/log level throwable message))
@@ -109,14 +109,14 @@
               the original exception. Defaults to true"
   ([handler] (wrap-log-response handler {}))
   ([handler {:keys [log-fn log-exceptions? transform-fn request-keys]
-             :or {log-fn rl/default-log-fn
+             :or {log-fn default-log-fn
                   transform-fn identity
                   log-exceptions? true
-                  request-keys rl/default-request-keys}}]
+                  request-keys default-request-keys}}]
    (fn [request]
-     (let [start-ms (or (::rl/start-ms request)
+     (let [start-ms (or (::start-ms request)
                         (System/currentTimeMillis))
-           log (rl/make-transform-and-log-fn transform-fn log-fn)
+           log (make-transform-and-log-fn transform-fn log-fn)
            base-message (select-keys request request-keys)]
        (-> (handler request)
            (d/chain (fn [{:keys [status] :as response}]
@@ -127,9 +127,9 @@
                                     :info)]
                         (log {:level level
                               :message (-> base-message
-                                           (assoc ::rl/type :finish
+                                           (assoc ::type :finish
                                                   :status status
-                                                  ::rl/ms elapsed-ms))})
+                                                  ::ms elapsed-ms))})
                         response)))
            (d/catch (fn [e]
                       (when log-exceptions?
@@ -137,7 +137,7 @@
                           (log {:level :error
                                 :throwable e
                                 :message (-> base-message
-                                             (assoc ::rl/type :exception
+                                             (assoc ::type :exception
                                                     ::ms elapsed-ms))})))
                       (throw e))))))))
 
