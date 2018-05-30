@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+### Fixes
+
+  - Fix on wrap-log-request-params: StackOverflowException when passing handler only - #42 (@yanatan16)
+
 ## 1.0.0
 
 ### This is a major, breaking-changes release
@@ -8,7 +14,7 @@
 - No default coloring (coloring can be added through the `transform-fn`)
 - "Logs as data": Log messages are simple clojure maps now. This makes it easy to transform to different
   final representations: string, colored string, JSON, EDN, etc.
-
+  
 Example:
 
 ```clojure
